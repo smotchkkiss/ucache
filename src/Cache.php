@@ -149,6 +149,7 @@ class Cache {
         }
     }
 
+    // the following two functions were copied/adapted from
     // https://web.archive.org/web/20130208144021/http://neo22s.com/slug
     static function sanitize($s) {
         // everything to lower and no spaces begin or end
