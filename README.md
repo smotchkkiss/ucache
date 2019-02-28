@@ -39,6 +39,19 @@ if (!$cache->serve()) {
 }
 ```
 
+## Development
+
+Install dependencies
+
+```sh
+composer install
+```
+
+Run tests
+```sh
+./vendor/bin/phpunit tests
+```
+
 ## License
 
 [The MIT License](https://github.com/em4nl/ucache/blob/master/LICENSE)
