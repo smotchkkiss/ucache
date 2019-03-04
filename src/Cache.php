@@ -5,14 +5,25 @@ namespace Em4nl\U;
 
 class Cache {
 
-    function __construct($dir, $types=array('html', 'xml', 'json')) {
+    // for a list of mime types see
+    // https://wiki.selfhtml.org/wiki/MIME-Type/%C3%9Cbersicht
+    const default_types = array(
+        'text/html' => 'html',
+        'text/xml' => 'xml',
+        'application/json' => 'json',
+    );
+
+    function __construct($dir, $types=NULL) {
         $this->dir = $dir;
-        // for a list of mime types see
-        // https://wiki.selfhtml.org/wiki/MIME-Type/%C3%9Cbersicht
-        if (!count($types)) {
+        if (isset($types) && !count($types)) {
             throw new \Exception('$types cannot be empty');
         }
-        $this->types = $types;
+        if ($types) {
+            $this->types = $types;
+        } else {
+            $this->types = self::default_types;
+        }
+        $this->extensions = array_values($this->types);
         $this->invalidation_callbacks = array();
         self::assert_sha256_available();
     }
@@ -37,10 +48,8 @@ class Cache {
 
     function serve() {
         $uri = $this->get_current_uri();
-        $extension = $this->get_extension($uri);
-        $filename = $this->get_filename($uri, $extension);
-        $file_path = "{$this->dir}/$filename";
-        if (!file_exists($file_path)) {
+        $file_path = $this->find_cached_file($uri);
+        if (!$file_path) {
             return FALSE;
         }
         foreach ($this->invalidation_callbacks as $callback) {
@@ -63,8 +72,10 @@ class Cache {
 
     function add($response) {
         $uri = $this->get_current_uri();
-        $extension = $this->get_extension($uri);
-        $filename = $this->get_filename($uri, $extension);
+        $extension = $this->get_extension_from_header();
+        if (!$extension) $extension = $this->get_extension_from_uri($uri);
+        if (!$extension) $extension = $this->extensions[0];
+        $filename = $this->get_filename($uri) . ".{$extension}";
         return $this->save($filename, $extension, $response);
     }
 
@@ -93,14 +104,30 @@ class Cache {
         return TRUE;
     }
 
-    function get_filename($uri, $extension) {
+    function find_cached_file($uri) {
+        $extension = $this->get_extension_from_uri($uri);
+        if ($extension) {
+            $try_extensions = array($extension);
+        } else {
+            $try_extensions = $this->extensions;
+        }
+        $filename = $this->get_filename($uri);
+        foreach ($try_extensions as $try_extension) {
+            $file_path = "{$this->dir}/{$filename}.{$try_extension}";
+            if (file_exists($file_path)) {
+                return $file_path;
+            }
+        }
+        return NULL;
+    }
+
+    function get_filename($uri) {
         $hash = hash('sha256', $uri);
         $slug = self::sanitize($uri);
         if ($slug !== '') {
             $slug .= '.';
         }
-        $filename = $slug . $hash . '.' . $extension;
-        return $filename;
+        return $slug . $hash;
     }
 
     function empty_cache_directory() {
@@ -108,14 +135,33 @@ class Cache {
     }
 
     function is_valid_extension($ext) {
-        return in_array($ext, $this->types);
+        return in_array($ext, $this->extensions);
     }
 
     function get_current_uri() {
         return urldecode($_SERVER['REQUEST_URI']);
     }
 
-    function get_extension($uri) {
+    function get_extension_from_header() {
+        // try to get extension from headers
+        foreach (headers_list() as $header) {
+            $matches = array();
+            $is_match = preg_match(
+                '/^content-type:\s*([a-zA-Z0-9.\/+-]+)/i',
+                $header,
+                $matches
+            );
+            if ($is_match) {
+                $mime_type = $matches[1];
+                if (isset($this->types[$mime_type])) {
+                    return $this->types[$mime_type];
+                }
+           }
+        }
+        return NULL;
+    }
+
+    function get_extension_from_uri($uri) {
         // try to get extension from uri
         $uri_parts = explode('?', $uri);
         $path = $uri_parts[0];
@@ -125,7 +171,7 @@ class Cache {
         if ($path_parts_c > 1 && $this->is_valid_extension($last_path_part)) {
             return $last_path_part;
         }
-        return $this->types[0];
+        return NULL;
     }
 
     static function assert_sha256_available() {
@@ -153,7 +199,7 @@ class Cache {
     // https://web.archive.org/web/20130208144021/http://neo22s.com/slug
     static function sanitize($s) {
         // everything to lower and no spaces begin or end
-        $res = strtolower(trim($s));
+        $res = mb_strtolower(trim($s));
 
         //replace accent characters, depends your language is needed
         $res = self::replace_accents($res);
