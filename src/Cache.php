@@ -57,9 +57,16 @@ class Cache {
                 return FALSE;
             }
         }
-        $bytes = readfile($file_path);
-        if ($bytes !== FALSE) {
-            return TRUE;
+        $content_type = $this->get_type_from_filename($file_path);
+        // we have no other chance but use file_exists here to
+        // optimistically send headers before we can call readfile
+        if (file_exists($file_path)) {
+            header('HTTP/1.1 200 OK');
+            header("Content-Type: $content_type");
+            $bytes = readfile($file_path);
+            if ($bytes !== FALSE) {
+                return TRUE;
+            }
         }
         return FALSE;
     }
@@ -165,11 +172,28 @@ class Cache {
         // try to get extension from uri
         $uri_parts = explode('?', $uri);
         $path = $uri_parts[0];
-        $path_parts = explode('.', $path);
-        $path_parts_c = count($path_parts);
-        $last_path_part = $path_parts[$path_parts_c - 1];
-        if ($path_parts_c > 1 && $this->is_valid_extension($last_path_part)) {
-            return $last_path_part;
+        return $this->get_filename_extension($path);
+    }
+
+    function get_type_from_filename($file_path) {
+        $extension = $this->get_filename_extension($file_path);
+        if ($extension !== NULL) {
+            foreach ($this->types as $type => $ext) {
+                if ($ext === $extension) {
+                    return $type;
+                }
+            }
+        }
+        $types = array_keys($this->types);
+        return $types[0];
+    }
+
+    function get_filename_extension($filename) {
+        $parts = explode('.', $filename);
+        $parts_c = count($parts);
+        $last_part = $parts[$parts_c - 1];
+        if ($parts_c > 1 && $this->is_valid_extension($last_part)) {
+            return $last_part;
         }
         return NULL;
     }
