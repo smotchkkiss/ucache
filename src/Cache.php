@@ -11,6 +11,7 @@ class Cache {
         'text/html' => 'html',
         'text/xml' => 'xml',
         'application/json' => 'json',
+        'text/plain' => 'txt',
     );
 
     function __construct($dir, $types=NULL) {
